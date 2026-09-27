@@ -31,7 +31,7 @@ def visual_analysis(image_file_paths: list,task_description: str) -> str:
     #     img2_bytes = f.read()
 
     
-    model = "gemini-2.5-flash"
+    model = "gemini-flash-latest"
     contents = [
         types.Content(
             role="user",
@@ -94,13 +94,32 @@ If you cannot confidently fulfill the request in the `TEXT PROMPT` (e.g., the im
         ],
     )
 
-    res = client.models.generate_content(
-        model=model,
-        contents=contents,
-        config=generate_content_config,
-    )
+    import time
+    candidate_models = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-lite-latest"]
 
-    llm_output = res.text
+    llm_output = None
+    last_error = None
+    for candidate_model in candidate_models:
+        for attempt in range(2):
+            try:
+                res = client.models.generate_content(
+                    model=candidate_model,
+                    contents=contents,
+                    config=generate_content_config,
+                )
+                llm_output = res.text
+                break
+            except Exception as e:
+                last_error = e
+                print(f"Model {candidate_model} error: {e}. Retrying/trying next candidate...")
+                time.sleep(1)
+        if llm_output:
+            break
+
+    if not llm_output:
+        if last_error:
+            raise last_error
+        return ""
 
     # text might sometime contain backtickes, so we need to handle that
     pattern = r"```(?:json\n)?(.*?)```"

@@ -21,16 +21,18 @@ class TaskOrchestrator:
     """
     def __init__(self, plan_data):
         if isinstance(plan_data, str):
-            self.plan = json.loads(plan_data)
+            cleaned_data = plan_data.strip()
+            # Strip markdown code blocks if present
+            if cleaned_data.startswith("```"):
+                cleaned_data = re.sub(r"^```(?:json)?\s*", "", cleaned_data)
+                cleaned_data = re.sub(r"\s*```$", "", cleaned_data)
+            self.plan = json.loads(cleaned_data)
         # If it's already a list/dict (Python object), use it directly
         else:
             self.plan = plan_data
         self.work_dir = "session_workspace"
         self.max_retries = 3 # 1 initial attempt + 3 retries
         
-        # Clean up previous session if it exists
-        # if os.path.exists(self.work_dir):
-        #     shutil.rmtree(self.work_dir)
         os.makedirs(self.work_dir, exist_ok=True)
         print(f"Workspace created at: {os.path.abspath(self.work_dir)}")
 
@@ -74,6 +76,19 @@ class TaskOrchestrator:
         if not imports:
             return
             
+        PACKAGE_MAP = {
+            "fitz": "PyMuPDF",
+            "PIL": "pillow",
+            "bs4": "beautifulsoup4",
+            "sklearn": "scikit-learn",
+            "cv2": "opencv-python",
+            "yaml": "pyyaml",
+            "dotenv": "python-dotenv",
+            "dateutil": "python-dateutil",
+            "docx": "python-docx",
+            "pptx": "python-pptx",
+        }
+
         print(f"Found potential dependencies: {imports}")
         for package in imports:
             try:
@@ -81,19 +96,21 @@ class TaskOrchestrator:
                 __import__(package)
                 print(f"Dependency '{package}' is already installed.")
             except ImportError:
-                print(f"Dependency '{package}' not found. Verifying with PyPI...")
-                # Verify with PyPI to avoid installing hallucinated packages
-                response = requests.get(f"https://pypi.org/pypi/{package}/json")
+                pypi_pkg = PACKAGE_MAP.get(package, package)
+                print(f"Dependency '{package}' not found. Verifying with PyPI as '{pypi_pkg}'...")
+                response = requests.get(f"https://pypi.org/pypi/{pypi_pkg}/json")
                 if response.status_code == 200:
-                    print(f"'{package}' is a valid package. Installing...")
-                    # Use sys.executable to ensure pip is from the correct env
-                    subprocess.run(
-                        [sys.executable, "-m", "pip", "install", package],
-                        check=True, capture_output=True, text=True
-                    )
-                    print(f"Successfully installed '{package}'.")
+                    print(f"'{pypi_pkg}' is a valid package. Installing...")
+                    try:
+                        subprocess.run(
+                            [sys.executable, "-m", "pip", "install", pypi_pkg],
+                            check=True, capture_output=True, text=True
+                        )
+                        print(f"Successfully installed '{pypi_pkg}'.")
+                    except subprocess.CalledProcessError as install_err:
+                        print(f"Warning: Failed to install '{pypi_pkg}': {install_err.stderr}")
                 else:
-                    raise DependencyError(f"LLM hallucinated a non-existent package: '{package}'")
+                    print(f"Warning: Could not verify package '{package}' on PyPI.")
 
     def execute_workflow(self) -> dict:
         """Executes the entire plan, task by task."""

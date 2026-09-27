@@ -6,8 +6,7 @@ requests
 beautifulsoup4
 pillow
 google-genai
-dotenv
-subprocess.run
+python-dotenv
 fastparquet
 python-multipart
 uvicorn
@@ -18,3 +17,4 @@ pdfplumber
 openpyxl
 xlrd #if the render goes above 500 mb, remove this one 
 duckdb
+PyMuPDF

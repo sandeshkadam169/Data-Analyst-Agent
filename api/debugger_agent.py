@@ -14,7 +14,7 @@ def debug_code(task: dict,last_task_output:str, failed_code: str, error_message:
         api_key=os.environ.get("GEMINI_API_KEY"),
     )
 
-    model = "gemini-2.5-flash-lite"
+    model = "gemini-flash-latest"
     contents = [
         types.Content(
             role="user",
@@ -72,19 +72,25 @@ Before writing any code, you must internally follow these steps:
         ],
     )
 
-    response = client.models.generate_content(
-        model=model,
-        contents=contents,
-        config=generate_content_config,
-    )
-    # print(response.text)
-    return response.text
-    # for chunk in client.models.generate_content_stream(
-    #     model=model,
-    #     contents=contents,
-    #     config=generate_content_config,
-    # ):
-    #     print(chunk.text, end="")
+    import time
+    candidate_models = ["gemini-flash-latest", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-lite-latest"]
+
+    last_error = None
+    for candidate_model in candidate_models:
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=candidate_model,
+                    contents=contents,
+                    config=generate_content_config,
+                )
+                return response.text
+            except Exception as e:
+                last_error = e
+                print(f"Model {candidate_model} error: {e}. Retrying/trying next candidate...")
+                time.sleep(1)
+
+    raise last_error
 
 # if __name__ == "__main__":
 #     task = '''{

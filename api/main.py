@@ -9,6 +9,8 @@ import os
 import sys
 import shutil
 import json
+from dotenv import load_dotenv
+load_dotenv()
 
 app = FastAPI()
 
@@ -105,47 +107,45 @@ async def upload_files(request: Request):
     questions = None
     extra_files = []
 
+    os.makedirs("session_workspace", exist_ok=True)
+
     for field_name, uploaded_file in files:
-        
-        if field_name == "questions.txt":
-            # Read questions.txt
-            questions = (await uploaded_file.read()).decode()
-            
+        if field_name == "questions.txt" or getattr(uploaded_file, "filename", "") == "questions.txt":
+            content = await uploaded_file.read()
+            questions = content.decode("utf-8", errors="replace")
+            continue
 
-        # Save other files to disk
-        os.makedirs("session_workspace", exist_ok=True)
-        file_path = f"session_workspace/{uploaded_file.filename}"
-        extra_files.append(uploaded_file.filename)
+        if hasattr(uploaded_file, "filename") and uploaded_file.filename:
+            file_path = os.path.join("session_workspace", uploaded_file.filename)
+            extra_files.append(uploaded_file.filename)
 
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(uploaded_file.file, buffer)
+            with open(file_path, "wb") as buffer:
+                content = await uploaded_file.read()
+                buffer.write(content)
 
-        uploaded_file.file.close()
-
-    # remove the questions.txt from the extra_files list
-    extra_files = [f for f in extra_files if f != "questions.txt"]
+            uploaded_file.file.close()
 
     if not questions:
         raise HTTPException(status_code=400, detail="questions.txt is missing or empty")
 
     # Process files here as needed
-    questions = questions + f"\nFiles provided with the questions.txt are: {', '.join(extra_files)}"
+    if extra_files:
+        questions = questions + f"\nFiles provided with the questions.txt are: {', '.join(extra_files)}"
 
     try:
         task = task_breakdown(questions)
     except Exception as e:
         print(f"task_breakdown failed: {e}", file=sys.stderr)
-        raise HTTPException(status_code=500, detail="Planner failed. Check GEMINI_API_KEY and logs.")
+        raise HTTPException(status_code=500, detail=f"Planner failed: {e}")
 
     try:
         orchestrator = TaskOrchestrator(task)
         final_result = orchestrator.execute_workflow()
-        orchestrator.__del__()
         print(final_result)
         return final_result
     except Exception as e:
         print(f"execute_workflow failed: {e}", file=sys.stderr)
-        raise HTTPException(status_code=500, detail="Internal server error during task execution")
+        raise HTTPException(status_code=500, detail=f"Workflow execution failed: {e}")
     
 
 @app.get("/debug")
@@ -205,5 +205,5 @@ Answer the following questions and respond with a JSON array of strings containi
 # don't include this for vercel deployment
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-    #for render deployment 0.0.0.0 host
+    # Enable reload so changes in api/ are automatically picked up
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
